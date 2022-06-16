@@ -3,7 +3,29 @@ from data_aug.gaussian_blur import GaussianBlur
 from torchvision import transforms, datasets
 from data_aug.view_generator import ContrastiveLearningViewGenerator
 from exceptions.exceptions import InvalidDatasetSelection
+from PIL import Image
+import glob
+import torch
+import os
 
+
+class ImagePathDataset(torch.utils.data.Dataset):
+    def __init__(self, dir, transforms=None):
+        self.img_dir = dir
+        jpg = os.path.join(dir, '*.jpg')
+        png = os.path.join(dir, '*.png')
+        self.files = glob.glob(jpg) + glob.glob(png)
+        self.transforms = transforms
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, i):
+        path = self.files[i]
+        img = Image.open(path).convert('RGB')
+        if self.transforms is not None:
+            img = self.transforms(img)
+        return img
 
 class ContrastiveLearningDataset:
     def __init__(self, root_folder):
@@ -21,22 +43,8 @@ class ContrastiveLearningDataset:
                                               transforms.ToTensor()])
         return data_transforms
 
-    def get_dataset(self, name, n_views):
-        valid_datasets = {'cifar10': lambda: datasets.CIFAR10(self.root_folder, train=True,
-                                                              transform=ContrastiveLearningViewGenerator(
-                                                                  self.get_simclr_pipeline_transform(32),
-                                                                  n_views),
-                                                              download=True),
-
-                          'stl10': lambda: datasets.STL10(self.root_folder, split='unlabeled',
-                                                          transform=ContrastiveLearningViewGenerator(
-                                                              self.get_simclr_pipeline_transform(96),
-                                                              n_views),
-                                                          download=True)}
-
-        try:
-            dataset_fn = valid_datasets[name]
-        except KeyError:
-            raise InvalidDatasetSelection()
-        else:
-            return dataset_fn()
+    def get_dataset(self, n_views):
+        return ImagePathDataset(self.root_folder,
+                         transforms=ContrastiveLearningViewGenerator(
+                            self.get_simclr_pipeline_transform(256),
+                            n_views))
