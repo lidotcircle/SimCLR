@@ -6,6 +6,7 @@ import pathlib
 from torchvision import models
 from data_aug.contrastive_learning_dataset import ContrastiveLearningDataset
 from models.resnet_simclr import ResNetSimCLR
+from models.simple_resnet import ResNet18
 from simclr import SimCLR
 from tdlogger import TdLogger
 
@@ -86,7 +87,11 @@ def main():
 
     logger = TdLogger(args.logger_endpoint, "Loss", 1, ("admin", "123456"), group_prefix=args.logger_prefix + "SimCLR", disabled=args.disable_logger)
 
-    model = ResNetSimCLR(base_model=args.arch, out_dim=args.out_dim)
+    model = None
+    if args.arch == 'resnet18':
+        model = ResNet18(num_outputs=args.out_dim)
+    else:
+        model = ResNetSimCLR(base_model=args.arch, out_dim=args.out_dim)
 
     optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=args.weight_decay)
 
