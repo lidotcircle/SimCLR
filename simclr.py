@@ -6,7 +6,7 @@ import GPUtil
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
-from utils import accuracy, save_checkpoint
+from utils import accuracy, save_checkpoint, computeModelParametersNorm1
 from tdlogger import TdLogger
 
 torch.manual_seed(0)
@@ -14,12 +14,13 @@ torch.manual_seed(0)
 
 class SimCLR(object):
 
-    def __init__(self, logger: TdLogger, *args, **kwargs):
+    def __init__(self, logger: TdLogger, checkpoint_dir: str, *args, **kwargs):
         self.args = kwargs['args']
         self.model = kwargs['model'].to(self.args.device)
         self.optimizer = kwargs['optimizer']
         self.scheduler = kwargs['scheduler']
         self.logger = logger
+        self.checkpoint_dir = checkpoint_dir
         self.criterion = torch.nn.CrossEntropyLoss().to(self.args.device)
 
     def send_gpuinfo(self):
@@ -72,7 +73,9 @@ class SimCLR(object):
 
         n_iter = 0
         self.logger.info(f"Start SimCLR training for {self.args.epochs} epochs.")
-        self.logger.info(f"Training with gpu: {self.args.disable_cuda}.")
+        self.logger.info(f"Training with gpu: {not self.args.disable_cuda}.")
+        _, nparam = computeModelParametersNorm1(self.model)
+        self.logger.info("Model Parameters: %.2fM" % (nparam / (1e6)))
 
         def eval_test():
             un = enumerate(test_loader)
@@ -127,11 +130,8 @@ class SimCLR(object):
 
         self.logger.info("Training has finished.")
         # save model checkpoints
-        checkpoint_name = 'checkpoint_{:04d}.pth.tar'.format(self.args.epochs)
-        save_checkpoint({
-            'epoch': self.args.epochs,
-            'arch': self.args.arch,
-            'state_dict': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-        }, is_best=False, filename=os.path.join(self.writer.log_dir, checkpoint_name))
-        self.logger.info(f"Model checkpoint and metadata has been saved at {self.writer.log_dir}.")
+        checkpoint_name = 'checkpoint_{:04d}.pth'.format(self.args.epochs)
+        save_checkpoint(
+            self.model.state_dict(),
+            is_best=False, filename=os.path.join(self.checkpoint_dir, checkpoint_name))
+        self.logger.info(f"Model checkpoint and metadata has been saved at {self.checkpoint_dir}.")

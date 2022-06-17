@@ -6,16 +6,18 @@ from exceptions.exceptions import InvalidBackboneError
 
 class ResNetSimCLR(nn.Module):
 
-    def __init__(self, base_model, out_dim):
+    def __init__(self, base_model, out_dim, return_latent=False):
         super(ResNetSimCLR, self).__init__()
         self.resnet_dict = {"resnet18": models.resnet18(pretrained=False, num_classes=out_dim),
                             "resnet50": models.resnet50(pretrained=False, num_classes=out_dim)}
 
+        self.return_latent = return_latent
         self.backbone = self._get_basemodel(base_model)
         dim_mlp = self.backbone.fc.in_features
 
+        self.output = self.backbone.fc
         # add mlp projection head
-        self.backbone.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp), nn.ReLU(), self.backbone.fc)
+        self.backbone.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp), nn.ReLU())
 
     def _get_basemodel(self, model_name):
         try:
@@ -27,4 +29,9 @@ class ResNetSimCLR(nn.Module):
             return model
 
     def forward(self, x):
-        return self.backbone(x)
+        latent = self.backbone(x)
+        out = self.output(latent)
+        if self.return_latent:
+            return latent, out
+        else:
+            return out

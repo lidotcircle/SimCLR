@@ -1,22 +1,21 @@
-import os
 import shutil
 
 import torch
-import yaml
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='checkpoint.pth'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, 'model_best.pth')
 
-
-def save_config_file(model_checkpoints_folder, args):
-    if not os.path.exists(model_checkpoints_folder):
-        os.makedirs(model_checkpoints_folder)
-        with open(os.path.join(model_checkpoints_folder, 'config.yml'), 'w') as outfile:
-            yaml.dump(args, outfile, default_flow_style=False)
-
+def computeModelParametersNorm1(model: torch.nn.Module):
+    parameters_norm = 0
+    nparameters = 0
+    for param in model.parameters():
+        paramd = param.detach()
+        parameters_norm += torch.norm(paramd, 1)
+        nparameters += paramd.numel()
+    return parameters_norm, nparameters
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""

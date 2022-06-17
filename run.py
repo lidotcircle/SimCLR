@@ -1,6 +1,8 @@
 import argparse
 import torch
 import torch.backends.cudnn as cudnn
+import os
+import pathlib
 from torchvision import models
 from data_aug.contrastive_learning_dataset import ContrastiveLearningDataset
 from models.resnet_simclr import ResNetSimCLR
@@ -16,6 +18,8 @@ parser.add_argument('--dataroot', type=str, required=True,
                     help='dataset root dir',)
 parser.add_argument('--test-dataroot', type=str, required=True,
                     help='test dataset root dir')
+parser.add_argument('--name', type=str, required=True,
+                    help='model name')
 parser.add_argument('--test-interval', default=1, type=int,
                     help='epoch interval for evaluating a batch of test sample')
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
@@ -89,9 +93,13 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader), eta_min=0,
                                                            last_epoch=-1)
 
+
+    checkpoint_dir = os.path.join(os.path.dirname(__file__), "checkpoints", args.name)
+    pathlib.Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
     #  It’s a no-op if the 'gpu_index' argument is a negative integer or None.
     with torch.cuda.device(args.gpu_index):
-        simclr = SimCLR(logger=logger, model=model, optimizer=optimizer, scheduler=scheduler, args=args)
+        simclr = SimCLR(logger=logger, checkpoint_dir=checkpoint_dir, model=model, optimizer=optimizer, scheduler=scheduler, args=args)
         simclr.train(train_loader, test_loader, args.test_interval)
 
 
