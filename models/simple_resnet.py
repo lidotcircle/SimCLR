@@ -54,7 +54,7 @@ class ResNet18(nn.Module):
             self.in_planes = planes
         return nn.Sequential(*layers)
 
-    def forward(self, x, features: list=None):
+    def forward(self, x, features: list=None, heatmap: list=None):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -72,6 +72,14 @@ class ResNet18(nn.Module):
         x = self.layer4(x)
         if features:
             features.append(x)
+        
+        if heatmap is not None:
+            xvx = x.permute(0, 2, 3, 1).detach()
+            xvx = self.linear(xvx)
+            xvx = xvx.permute(0, 3, 1, 2)
+            w_heatmap = torch.mean(xvx, dim=1)
+            heatmap.append(w_heatmap)
+
         x = F.adaptive_avg_pool2d(x, 1)
         x = x.view(x.size(0), -1)
         x = self.linear(x)

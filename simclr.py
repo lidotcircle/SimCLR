@@ -1,12 +1,14 @@
+import io
 import os
 
 import torch
 import torch.nn.functional as F
 import GPUtil
+from torchvision.utils import make_grid, save_image
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
-from utils import accuracy, save_checkpoint, computeModelParametersNorm1
+from utils import accuracy, bhw2heatmap, image_blend_normal, save_checkpoint, computeModelParametersNorm1
 from tdlogger import TdLogger
 
 torch.manual_seed(0)
@@ -83,7 +85,17 @@ class SimCLR(object):
             _, imgs = next(un)
             imgs = torch.cat(imgs, dim=0)
             imgs = imgs.to(self.args.device)
-            features = self.model(imgs)
+            _heatmaps = []
+            features = self.model(imgs, heatmap=_heatmaps)
+
+            heatmaps = _heatmaps[0]
+            ren_heatmaps = bhw2heatmap(heatmaps.unsqueeze(1))
+            blend_heatmaps = image_blend_normal(ren_heatmaps[:5], imgs[:5], 0.2)
+            image = make_grid(blend_heatmaps, nrow=blend_heatmaps.size(0), normalize=True)
+            buf = io.BytesIO()
+            save_image(image, buf, format='png')
+            self.logger.sendBlob(buf.getvalue(), f"SimCLR_heatmap_{epoch}.png", f"/SimCLR_heatmap/{self.args.name}/{epoch}.png", "SimCLR_heatmap")
+
             logits, labels = self.info_nce_loss(features)
             loss = self.criterion(logits, labels)
             top1, top5 = accuracy(logits, labels, topk=(1, 5))
