@@ -16,12 +16,13 @@ class SimCLR(object):
 
     def __init__(self, logger: TdLogger, checkpoint_dir: str, *args, **kwargs):
         self.args = kwargs['args']
-        self.model = kwargs['model'].to(self.args.device)
+        self.model: torch.nn.Module = kwargs['model'].to(self.args.device)
         self.optimizer = kwargs['optimizer']
         self.scheduler = kwargs['scheduler']
         self.logger = logger
         self.checkpoint_dir = checkpoint_dir
         self.criterion = torch.nn.CrossEntropyLoss().to(self.args.device)
+        self.best_top1 = 0
 
     def send_gpuinfo(self):
         gpus = GPUtil.getGPUs()
@@ -77,7 +78,7 @@ class SimCLR(object):
         _, nparam = computeModelParametersNorm1(self.model)
         self.logger.info("Model Parameters: %.2fM" % (nparam / (1e6)))
 
-        def eval_test():
+        def eval_test(epoch):
             un = enumerate(test_loader)
             _, imgs = next(un)
             imgs = torch.cat(imgs, dim=0)
@@ -88,11 +89,27 @@ class SimCLR(object):
             top1, top5 = accuracy(logits, labels, topk=(1, 5))
             stats = {}
             stats['loss'] = loss.item()
-            stats['top1'] = top1.mean().item()
+            top1_val = top1.mean().item()
+            stats['top1'] = top1_val
             stats['top5'] = top5.mean().item()
             self.logger.send(stats, "validation", True)
+            if self.best_top1 < top1_val and self.best_top1 > 0:
+                checkpoint_name = f'best_top1_model.pth'
+                self.logger.info(f"save best model, epoch = {epoch}")
+                save_checkpoint(
+                    self.model.state_dict(),
+                    is_best=False, filename=os.path.join(self.checkpoint_dir, checkpoint_name))
+            self.best_top1 = max(self.best_top1, top1_val)
 
-        for epoch_counter in range(self.args.epochs):
+        if self.args.epoch_count > 0:
+            checkpoint_name = 'checkpoint_{:04d}.pth'.format(self.args.epoch_count)
+            state_dict = torch.load(os.path.join(self.checkpoint_dir, checkpoint_name))
+            self.model.load_state_dict(state_dict)
+            self.logger.info(f"load checkpoint '{checkpoint_name}'")
+            with torch.no_grad():
+                eval_test(self.args.epoch_count)
+
+        for epoch_counter in range(self.args.epoch_count + 1, self.args.epochs + 1):
             for images, images2 in tqdm(train_loader):
                 images = torch.cat([images, images2], dim=0)
                 images = images.to(self.args.device)
@@ -126,7 +143,7 @@ class SimCLR(object):
             self.logger.debug(f"Epoch: {epoch_counter}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
             if epoch_counter % test_interval == 0:
                 with torch.no_grad():
-                    eval_test()
+                    eval_test(epoch_counter)
 
         self.logger.info("Training has finished.")
         # save model checkpoints
