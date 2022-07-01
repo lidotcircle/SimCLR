@@ -43,8 +43,14 @@ class ContrastiveLearningDataset:
                                               transforms.ToTensor()])
         return data_transforms
 
-    def get_dataset(self, n_views):
+    @staticmethod
+    def get_to_tensor_transform(size, s=1):
+        """Return a set of data augmentation transformations as described in the SimCLR paper."""
+        data_transforms = transforms.Compose([transforms.ToTensor()])
+        return data_transforms
+
+    def get_dataset(self, n_views, identical: bool=False):
         return ImagePathDataset(self.root_folder,
                          transforms=ContrastiveLearningViewGenerator(
-                            self.get_simclr_pipeline_transform(256),
+                            self.get_to_tensor_transform(256) if identical else self.get_simclr_pipeline_transform(256),
                             n_views))

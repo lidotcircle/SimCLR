@@ -33,6 +33,8 @@ parser.add_argument('-j', '--workers', default=12, type=int, metavar='N',
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--epoch_count', default=0, type=int, help='start epoch')
+parser.add_argument('--phase', type=str, default='train', choices=['train', 'test', 'eval'], help='evaluate model and produce heatmap(CAM-like)')
+parser.add_argument('--eval-dataroot', type=str, default='', help='evaluation dataroot')
 parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N',
                     help='mini-batch size (default: 256), this is the total '
@@ -106,7 +108,16 @@ def main():
     #  It’s a no-op if the 'gpu_index' argument is a negative integer or None.
     with torch.cuda.device(args.gpu_index):
         simclr = SimCLR(logger=logger, checkpoint_dir=checkpoint_dir, model=model, optimizer=optimizer, scheduler=scheduler, args=args)
-        simclr.train(train_loader, test_loader, args.test_interval)
+        if args.phase == 'train':
+            simclr.train(train_loader, test_loader, args.test_interval)
+        elif args.phase == 'test':
+            simclr.test(test_loader)
+        else:
+            eval_dataset = ContrastiveLearningDataset(args.eval_dataroot).get_dataset(1, identical=True)
+            eval_loader = torch.utils.data.DataLoader(
+                eval_dataset, batch_size=args.batch_size, shuffle=False,
+                num_workers=args.workers, pin_memory=True, drop_last=False)
+            simclr.eval(eval_loader)
 
 
 if __name__ == "__main__":

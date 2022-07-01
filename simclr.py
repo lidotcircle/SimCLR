@@ -4,6 +4,7 @@ import os
 import torch
 import torch.nn.functional as F
 import GPUtil
+import numpy as np
 from torchvision.utils import make_grid, save_image
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
@@ -25,6 +26,11 @@ class SimCLR(object):
         self.checkpoint_dir = checkpoint_dir
         self.criterion = torch.nn.CrossEntropyLoss().to(self.args.device)
         self.best_top1 = 0
+        if self.args.epoch_count > 0:
+            checkpoint_name = 'checkpoint_{:04d}.pth'.format(self.args.epoch_count)
+            state_dict = torch.load(os.path.join(self.checkpoint_dir, checkpoint_name))
+            self.model.load_state_dict(state_dict)
+            self.logger.info(f"load checkpoint '{checkpoint_name}'")
 
     def send_gpuinfo(self):
         gpus = GPUtil.getGPUs()
@@ -90,8 +96,8 @@ class SimCLR(object):
 
             heatmaps = _heatmaps[0]
             ren_heatmaps = bhw2heatmap(heatmaps.unsqueeze(1))
-            blend_heatmaps = image_blend_normal(ren_heatmaps[:5], imgs[:5], 0.2)
-            image = make_grid(blend_heatmaps, nrow=blend_heatmaps.size(0), normalize=True)
+            blend_heatmaps = image_blend_normal(ren_heatmaps[:5], imgs[:5], 0.3)
+            image = make_grid(blend_heatmaps, nrow=blend_heatmaps.size(0))
             buf = io.BytesIO()
             save_image(image, buf, format='png')
             self.logger.sendBlob(buf.getvalue(), f"SimCLR_heatmap_{epoch}.png", f"/SimCLR_heatmap/{self.args.name}/{epoch}.png", "SimCLR_heatmap")
@@ -114,11 +120,7 @@ class SimCLR(object):
             self.best_top1 = max(self.best_top1, top1_val)
 
         if self.args.epoch_count > 0:
-            checkpoint_name = 'checkpoint_{:04d}.pth'.format(self.args.epoch_count)
-            state_dict = torch.load(os.path.join(self.checkpoint_dir, checkpoint_name))
-            self.model.load_state_dict(state_dict)
-            self.logger.info(f"load checkpoint '{checkpoint_name}'")
-            with torch.no_grad():
+           with torch.no_grad():
                 eval_test(self.args.epoch_count)
 
         for epoch_counter in range(self.args.epoch_count + 1, self.args.epochs + 1):
@@ -164,3 +166,47 @@ class SimCLR(object):
             self.model.state_dict(),
             is_best=False, filename=os.path.join(self.checkpoint_dir, checkpoint_name))
         self.logger.info(f"Model checkpoint and metadata has been saved at {self.checkpoint_dir}.")
+
+    def eval(self, eval_loader: DataLoader):
+        num_imgs = 0
+        result_dir = os.path.abspath(os.path.join('result', self.args.name))
+        os.makedirs(result_dir, exist_ok=True)
+        img_no = 1
+        min_value_stat = []
+        max_value_stat = []
+        for _, imgs in enumerate(eval_loader):
+            imgs = torch.cat(imgs, dim=0)
+            imgs = imgs.to(self.args.device)
+            num_imgs = num_imgs + imgs.size(0)
+            _heatmaps = []
+            self.model(imgs, heatmap=_heatmaps)
+
+            heatmaps: torch.Tensor = _heatmaps[0]
+            ren_heatmaps = bhw2heatmap(heatmaps.unsqueeze(1))
+            blend_heatmaps = image_blend_normal(ren_heatmaps, imgs, 0.3)
+            for i in range(blend_heatmaps.size(0)):
+                max_value_stat.append(heatmaps[i].max().item())
+                min_value_stat.append(heatmaps[i].min().item())
+                img_path = os.path.join(result_dir, f'{img_no}.png')
+                bx = torch.stack([imgs[i], ren_heatmaps[i], blend_heatmaps[i]], dim=0)
+                image = make_grid(bx, nrow=3)
+                save_image(image, img_path)
+                img_no = img_no + 1
+
+        print(f"max(mean,stdn)=({np.mean(max_value_stat):.2f},{np.std(max_value_stat):.2f}), min(mean,stdn)=({np.mean(min_value_stat):.2f},{np.std(min_value_stat):.2f})")
+
+    def test(self, test_loader: DataLoader):
+        top1_sum = 0
+        top5_sum = 0
+        num_imgs = 0
+        for _, imgs in enumerate(test_loader):
+            imgs = torch.cat(imgs, dim=0)
+            imgs = imgs.to(self.args.device)
+            num_imgs = num_imgs + imgs.size(0)
+            _heatmaps = []
+            features = self.model(imgs, heatmap=_heatmaps)
+            logits, labels = self.info_nce_loss(features)
+            top1, top5 = accuracy(logits, labels, topk=(1, 5))
+            top1_sum = top1_sum + top1.item() * imgs.size(0)
+            top5_sum = top5_sum + top5.item() * imgs.size(0)
+        print(f"top1_avg: {(top1_sum / num_imgs):.2f}, top5_avg: {(top5_sum / num_imgs):.2f}")
