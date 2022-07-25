@@ -112,7 +112,7 @@ class SimCLR(object):
             stats['top5'] = top5.mean().item()
             self.logger.send(stats, "validation", True)
             if self.best_top1 < top1_val and self.best_top1 > 0:
-                checkpoint_name = f'best_top1_model.pth'
+                checkpoint_name = f'{self.args.arch}_best_top1_model.pth'
                 self.logger.info(f"save best model, epoch = {epoch}")
                 save_checkpoint(
                     self.model.state_dict(),
@@ -161,7 +161,7 @@ class SimCLR(object):
 
         self.logger.info("Training has finished.")
         # save model checkpoints
-        checkpoint_name = 'checkpoint_{:04d}.pth'.format(self.args.epochs)
+        checkpoint_name = '{}_checkpoint_{:04d}.pth'.format(self.args.arch, self.args.epochs)
         save_checkpoint(
             self.model.state_dict(),
             is_best=False, filename=os.path.join(self.checkpoint_dir, checkpoint_name))

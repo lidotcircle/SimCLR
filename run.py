@@ -5,6 +5,7 @@ import os
 import pathlib
 from torchvision import models
 from data_aug.contrastive_learning_dataset import ContrastiveLearningDataset
+from models.cvt import CvT
 from models.resnet_simclr import ResNetSimCLR
 from models.simple_resnet import ResNet18
 from simclr import SimCLR
@@ -13,6 +14,7 @@ from tdlogger import TdLogger
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
+model_names = model_names + ['cvt']
 
 parser = argparse.ArgumentParser(description='PyTorch SimCLR')
 parser.add_argument('--dataroot', type=str, required=True,
@@ -34,6 +36,7 @@ parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--epoch_count', default=0, type=int, help='start epoch')
 parser.add_argument('--phase', type=str, default='train', choices=['train', 'test', 'eval'], help='evaluate model and produce heatmap(CAM-like)')
+parser.add_argument('--aug_transforms', type=str, default='crop_flip_color_gray_blur', help='augmentation operations')
 parser.add_argument('--eval-dataroot', type=str, default='', help='evaluation dataroot')
 parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N',
@@ -79,11 +82,11 @@ def main():
         args.device = torch.device('cpu')
         args.gpu_index = -1
 
-    train_dataset = ContrastiveLearningDataset(args.dataroot).get_dataset(args.n_views)
+    train_dataset = ContrastiveLearningDataset(args.dataroot).get_dataset(args.n_views, aug_transforms=args.aug_transforms)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True, drop_last=True)
-    test_dataset = ContrastiveLearningDataset(args.test_dataroot).get_dataset(args.n_views)
+    test_dataset = ContrastiveLearningDataset(args.test_dataroot).get_dataset(args.n_views, aug_transforms=args.aug_transforms)
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True, drop_last=False)
@@ -93,6 +96,8 @@ def main():
     model = None
     if args.arch == 'resnet18':
         model = ResNet18(num_outputs=args.out_dim)
+    elif args.arch == 'cvt':
+        model = CvT(num_classes=args.out_dim, s3_depth=6)
     else:
         model = ResNetSimCLR(base_model=args.arch, out_dim=args.out_dim)
 

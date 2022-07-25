@@ -32,15 +32,23 @@ class ContrastiveLearningDataset:
         self.root_folder = root_folder
 
     @staticmethod
-    def get_simclr_pipeline_transform(size, s=1):
+    def get_simclr_pipeline_transform(size, s=1, aug_transforms='crop_flip_color_gray_blur'):
         """Return a set of data augmentation transformations as described in the SimCLR paper."""
         color_jitter = transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
-        data_transforms = transforms.Compose([transforms.RandomResizedCrop(size=size),
-                                              transforms.RandomHorizontalFlip(),
-                                              transforms.RandomApply([color_jitter], p=0.8),
-                                              transforms.RandomGrayscale(p=0.2),
-                                              GaussianBlur(kernel_size=int(0.1 * size)),
-                                              transforms.ToTensor()])
+        trans = []
+        if 'crop' in aug_transforms:
+            trans.append(transforms.RandomResizedCrop(size=size))
+        if 'flip' in aug_transforms:
+            trans.append(transforms.RandomHorizontalFlip())
+        if 'color' in aug_transforms:
+            trans.append(transforms.RandomApply([color_jitter], p=0.8))
+        if 'gray' in aug_transforms:
+            trans.append(transforms.RandomGrayscale(p=0.2))
+        if 'blur' in aug_transforms:
+            trans.append(GaussianBlur(kernel_size=int(0.1 * size)))
+        trans.append(transforms.ToTensor())
+
+        data_transforms = transforms.Compose(trans)
         return data_transforms
 
     @staticmethod
@@ -49,7 +57,7 @@ class ContrastiveLearningDataset:
         data_transforms = transforms.Compose([transforms.ToTensor()])
         return data_transforms
 
-    def get_dataset(self, n_views, identical: bool=False):
+    def get_dataset(self, n_views, identical: bool=False, aug_transforms='crop_flip_color_gray_blur'):
         return ImagePathDataset(self.root_folder,
                          transforms=ContrastiveLearningViewGenerator(
                             self.get_to_tensor_transform(256) if identical else self.get_simclr_pipeline_transform(256),
